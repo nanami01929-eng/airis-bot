@@ -7,7 +7,7 @@ from aiogram.filters import Command, CommandObject
 from google import genai
 
 BOT_TOKEN = "8984930047:AAE4Ng9HlYTlZfn4DGeES1Xv7dgJJX3-kas"
-GEMINI_KEY = "AQ.Ab8RN6JVsbidapaaz7DJ8bNw_oSobL0wPHlL-SvaLHezJSn7vQ"
+GEMINI_KEY = "AQ.Ab8RN6Kq2jUa2zXWsFmZuIpw6hNPVGp7oICTY-PJ-Vf9wHIsPg"
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -141,12 +141,23 @@ async def chat_handler(message: types.Message):
         await message.reply(response.text)
     except Exception as e:
         print(f"Ошибка Gemini: {e}")
+async def handle(request):
+    return web.Response(text="Bot is running!")
 
+async def start_dummy_server():
+    app = web.Application()
+    app.router.add_get("/", handle)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 10000))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
 # --- ЗАПУСК НА НОУТБУКЕ ---
 
 
 async def main():
-    await dp.start_polling(bot)
+   await start_dummy_server() 
+   await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
