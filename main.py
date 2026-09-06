@@ -145,20 +145,37 @@ async def chat_handler(message: types.Message):
 async def handle(request):
     return web.Response(text="Bot is running!")
 
-async def start_dummy_server():
-    app = web.Application()
-    app.router.add_get("/", handle)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    port = int(os.environ.get("PORT", 10000))
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
-# --- ЗАПУСК НА НОУТБУКЕ ---
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiohttp import web
+
+# --- НАСТРОЙКА ВЕБХУКА ДЛЯ RENDER ---
+WEBHOOK_PATH = f"/{BOT_TOKEN}"
+WEBHOOK_URL = f"https://airis-bot.onrender.com{WEBHOOK_PATH}"
 
 
-async def main():
-   await start_dummy_server() 
-   await dp.start_polling(bot)
+async def on_startup(app: web.Application):
+  # Устанавливаем вебхук в Telegram при старте
+  await bot.set_webhook(WEBHOOK_URL)
 
-if __name__ == "__main__":
-    asyncio.run(main())
+
+def main():
+  app = web.Application()
+
+  # Регистрируем обработчик входящих запросов от Telegram
+  webhook_requests_handler = SimpleRequestHandler(
+      dispatcher=dp,
+      bot=bot,
+  )
+  webhook_requests_handler.register(app, path=WEBHOOK_PATH)
+
+  # Настраиваем приложение
+  setup_application(app, dp, bot=bot)
+  app.on_startup.append(on_startup)
+
+  # Запускаем веб-сервер на порту, который требует Render
+  port = int(os.environ.get("PORT", 10000))
+  web.run_app(app, host="0.0.0.0", port=port)
+
+
+if name == "main":
+  main()
