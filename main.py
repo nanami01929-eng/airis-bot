@@ -201,5 +201,10 @@ def main():
     raise e
 
 
-if name == "main":
-  main()
+if __name__ == "__main__":
+  try:
+    main()
+  except Exception as e:
+    print("CRITICAL STARTUP ERROR:")
+    traceback.print_exc()
+    raise e
