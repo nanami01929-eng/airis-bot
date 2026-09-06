@@ -149,7 +149,7 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_applicati
 from aiohttp import web
 
 # --- НАСТРОЙКА ВЕБХУКА ДЛЯ RENDER ---
-WEBHOOK_PATH = f"/{BOT_TOKEN}"
+WEBHOOK_PATH = f"{BOT_TOKEN}"
 WEBHOOK_URL = f"https://airis-bot.onrender.com{WEBHOOK_PATH}"
 
 
