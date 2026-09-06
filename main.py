@@ -149,7 +149,7 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_applicati
 from aiohttp import web
 
 # --- НАСТРОЙКА ВЕБХУКА ДЛЯ RENDER ---
-WEBHOOK_PATH = f"{BOT_TOKEN}"
+WEBHOOK_PATH = f"/{BOT_TOKEN}"
 WEBHOOK_URL = f"https://airis-bot.onrender.com{WEBHOOK_PATH}"
 
 
@@ -166,7 +166,7 @@ def main():
       dispatcher=dp,
       bot=bot,
   )
-  webhook_requests_handler.register(app, path=WEBHOOK_PATH)
+  webhook_requests_handler.register(app, path=f"/{WEBHOOK_PATH}")
 
   # Настраиваем приложение
   setup_application(app, dp, bot=bot)
@@ -188,7 +188,7 @@ def main():
         dispatcher=dp,
         bot=bot,
     )
-    webhook_requests_handler.register(app, path=WEBHOOK_PATH)
+    webhook_requests_handler.register(app, path=f"/{WEBHOOK_PATH}")
 
     setup_application(app, dp, bot=bot)
     app.on_startup.append(on_startup)
