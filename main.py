@@ -177,5 +177,5 @@ def main():
   web.run_app(app, host="0.0.0.0", port=port)
 
 
-if name == "main":
+if __name__ == "___main__":
   main()
