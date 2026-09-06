@@ -177,5 +177,29 @@ def main():
   web.run_app(app, host="0.0.0.0", port=port)
 
 
-if __name__ == "___main__":
+import traceback
+
+
+def main():
+  try:
+    app = web.Application()
+
+    webhook_requests_handler = SimpleRequestHandler(
+        dispatcher=dp,
+        bot=bot,
+    )
+    webhook_requests_handler.register(app, path=WEBHOOK_PATH)
+
+    setup_application(app, dp, bot=bot)
+    app.on_startup.append(on_startup)
+
+    port = int(os.environ.get("PORT", 10000))
+    web.run_app(app, host="0.0.0.0", port=port)
+  except Exception as e:
+    print("CRITICAL STARTUP ERROR:")
+    traceback.print_exc()
+    raise e
+
+
+if name == "main":
   main()
