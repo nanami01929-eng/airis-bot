@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command, CommandObject
 from google import genai
+from aiohttp import web
 
 BOT_TOKEN = "8984930047:AAE4Ng9HlYTlZfn4DGeES1Xv7dgJJX3-kas"
 GEMINI_KEY = "AQ.Ab8RN6Kq2jUa2zXWsFmZuIpw6hNPVGp7oICTY-PJ-Vf9wHIsPg"
