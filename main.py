@@ -21,18 +21,14 @@ router = Router()
 
 # --- ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ПРОВЕРКИ ПРАВ АДМИНА ---
 async def is_user_admin(message: Message) -> bool:
-    # В ЛС (личных сообщениях) пользователь всегда сам себе хозяин
     if message.chat.type == "private":
         return True
-    
     try:
         member = await bot.get_chat_member(message.chat.id, message.from_user.id)
-        # Проверяем, является ли пользователь создателем (creator) или администратором (administrator)
         if member.status in ["creator", "administrator"]:
             return True
     except Exception as e:
         logging.error(f"Ошибка при проверке прав админа: {e}")
-    
     return False
 
 # --- МИНИ-ПРОГНОЗЫ ---
@@ -57,61 +53,50 @@ async def cmd_predict(message: Message):
     user_name = message.from_user.first_name
     await message.reply(f"🔮 {user_name}, прогноз на сегодня: {prediction}")
 
-# --- МОДЕРАЦИЯ (МУТ, БАН) С ПРОВЕРКОЙ ПРАВ АДМИНОВ ---
+# --- МОДЕРАЦИЯ (МУТ, БАН) ---
 
 @router.message(Command("ban"))
 async def cmd_ban(message: Message):
-    # Проверяем, админ ли тот, кто вызвал команду
     if not await is_user_admin(message):
         await message.reply("⛔️ Эту команду могут использовать только администраторы чата!")
         return
-
-    # Проверяем, ответил ли админ на сообщение нарушителя
     if not message.reply_to_message:
         await message.reply("⚠️ Эту команду нужно использовать ответом на сообщение пользователя, которого нужно забанить!")
         return
-
     user_to_ban = message.reply_to_message.from_user
     try:
-        # Баним пользователя в чате
         await message.chat.ban(user_to_ban.id)
         await message.reply(f"🔨 Пользователь {user_to_ban.full_name} заблокирован.")
     except Exception as e:
-        await message.reply(f"❌ Не удалось забанить пользователя. Убедитесь, что бот — администратор с правами бана.\nОшибка: {e}")
+        await message.reply(f"❌ Не удалось забанить пользователя. Ошибка: {e}")
 
 @router.message(Command("mute"))
 async def cmd_mute(message: Message):
     if not await is_user_admin(message):
         await message.reply("⛔️ Эту команду могут использовать только администраторы чата!")
         return
-
     if not message.reply_to_message:
-        await message.reply("⚠️ Эту команду нужно использовать ответом на сообщение пользователя, которого нужно отправить в мут!")
+        await message.reply("⚠️ Эту команду нужно использовать ответом на сообщение пользователя!")
         return
-
     user_to_mute = message.reply_to_message.from_user
     try:
-        # Ограничиваем права пользователя (запрещаем писать сообщения в чат)
         from aiogram.types import ChatPermissions
         permissions = ChatPermissions(can_send_messages=False)
         await message.chat.restrict(user_to_mute.id, permissions=permissions)
         await message.reply(f"🔇 Пользователь {user_to_mute.full_name} отправлен в мут.")
     except Exception as e:
-        await message.reply(f"❌ Не удалось ограничить пользователя. Убедитесь, что у бота есть права администратора.\nОшибка: {e}")
+        await message.reply(f"❌ Ошибка: {e}")
 
 @router.message(Command("unmute"))
 async def cmd_unmute(message: Message):
     if not await is_user_admin(message):
         await message.reply("⛔️ Эту команду могут использовать только администраторы чата!")
         return
-
     if not message.reply_to_message:
         await message.reply("⚠️ Ответьте на сообщение пользователя, чтобы снять мут.")
         return
-
     user_to_unmute = message.reply_to_message.from_user
     try:
-        # Возвращаем стандартные права на отправку сообщений
         from aiogram.types import ChatPermissions
         permissions = ChatPermissions(
             can_send_messages=True,
@@ -122,35 +107,24 @@ async def cmd_unmute(message: Message):
         await message.chat.restrict(user_to_unmute.id, permissions=permissions)
         await message.reply(f"🔊 С пользователя {user_to_unmute.full_name} сняты ограничения.")
     except Exception as e:
-        await message.reply(f"❌ Ошибка снятия мута: {e}")
+        await message.reply(f"❌ Ошибка: {e}")
 
-# --- ОБРАБОТЧИК ОБЫЧНЫХ СООБЩЕНИЙ ---
-@router.message()
-async def echo_handler(message: Message):
-    if message.text:
-        if len(message.text) > 100 or "подробно" in message.text.lower() or "расскажи" in message.text.lower():
-            await message.answer("Ты попросил(а) подробный ответ. Все системы активны, модерация на страже порядка!")
-        else:
-            # Для обычных коротких сообщений просто держим тишину или нейтральный отклик, чтобы не спамить в чате
-            pass
-
-# --- НАСТРОЙКА ВЕБХУКОВ ДЛЯ RENDER ---
-WEBHOOK_PATH = f"/{BOT_TOKEN}"
-WEBHOOK_URL = f"https://airis-bot.onrender.com{WEBHOOK_PATH}"
-
+# --- ЕДИНЫЙ ОБРАБОТЧИК ТЕКСТА ---
 @router.message()
 async def handle_any_text(message: Message):
     if not message.text:
         return
     
     text = message.text.lower()
-    print(f"ПОЛУЧЕН ТЕКСТ: {text}") # Эта строчка покажет в логах Render всё, что пишет пользователь
+    print(f"ПОЛУЧЕН ТЕКСТ: {text}")
     
     if "привет" in text:
         await message.answer(f"Привет, {message.from_user.first_name}! Как настроение?")
+    elif len(message.text) > 100 or "подробно" in text or "расскажи" in text:
+        await message.answer("Ты попросил(а) подробный ответ. Все системы активны, модерация на страже порядка!")
     else:
-        # Можешь пока ничего не писать или отправить заглушку для проверки
         pass
+
 # --- НАСТРОЙКА ВЕБХУКОВ ДЛЯ RENDER ---
 WEBHOOK_PATH = f"/{BOT_TOKEN}"
 WEBHOOK_URL = f"https://airis-bot.onrender.com{WEBHOOK_PATH}"
