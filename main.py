@@ -115,15 +115,25 @@ async def handle_any_text(message: Message):
     if not message.text:
         return
     
+    # Если это групповой чат, отвечаем ТОЛЬКО если есть упоминание бота через @ или это ответ на сообщение бота
+    if message.chat.type != "private":
+        bot_user = await bot.get_me()
+        is_mentioned = f"@{bot_user.username}" in message.text
+        is_reply_to_bot = message.reply_to_message and message.reply_to_message.from_user.id == bot_user.id
+        
+        if not is_mentioned and not is_reply_to_bot:
+            return # В группах молчим, если не к нам обращаются
+
     text = message.text.lower()
-    print(f"ПОЛУЧЕН ТЕКСТ: {text}")
     
     if "привет" in text:
         await message.answer(f"Привет, {message.from_user.first_name}! Как настроение?")
-    elif len(message.text) > 100 or "подробно" in text or "расскажи" in text:
-        await message.answer("Ты попросил(а) подробный ответ. Все системы активны, модерация на страже порядка!")
+    elif "как дела" in text or "как сам" in text:
+        await message.answer("Всё отлично, слежу за порядком в чате! Сам как?")
+    elif "что умеешь" in text or "помощь" in text:
+        await message.answer("Я могу показывать прогнозы (/predict) и помогать модераторам (/ban, /mute). А еще со мной можно просто болтать!")
     else:
-        pass
+        await message.answer("Слышу тебя! Если нужно что-то обсудить подробно или запустить прогноз — дай знать.")
 
 # --- НАСТРОЙКА ВЕБХУКОВ ДЛЯ RENDER ---
 WEBHOOK_PATH = f"/{BOT_TOKEN}"
