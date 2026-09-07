@@ -1,210 +1,162 @@
-import asyncio
 import os
-import re
-from datetime import datetime, timedelta
-from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command, CommandObject
-from google import genai
-from aiohttp import web
-
-BOT_TOKEN = "8984930047:AAGUyPlgAh9pip_fnCMtCTgxNvzgkTL35Ks"
-GEMINI_KEY = "AQ.Ab8RN6Kq2jUa2zXWsFmZuIpw6hNPVGp7oICTY-PJ-Vf9wHIsPg"
-
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
-ai_client = genai.Client(api_key=GEMINI_KEY)
-
-# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
-
-def parse_time(time_str: str) -> timedelta:
-    """Парсит время вида 10m, 2h, 1d в timedelta"""
-    if not time_str:
-        return timedelta(minutes=10)
-    match = re.match(r"^(\d+)([mhd])$", time_str.lower())
-    if not match:
-        return timedelta(minutes=10)
-    val, unit = int(match.group(1)), match.group(2)
-    if unit == "m":
-        return timedelta(minutes=val)
-    elif unit == "h":
-        return timedelta(hours=val)
-    elif unit == "d":
-        return timedelta(days=val)
-    return timedelta(minutes=10)
-
-async def is_admin(message: types.Message, user_id: int) -> bool:
-    """Проверка прав админа"""
-    if message.chat.type in ["private"]:
-        return False
-    member = await bot.get_chat_member(message.chat.id, user_id)
-    return member.status in ["administrator", "creator"]
-
-# --- КОМАНДЫ МОДЕРАЦИИ ---
-
-@dp.message(Command("mute"))
-async def mute_user(message: types.Message, command: CommandObject):
-    if not await is_admin(message, message.from_user.id):
-        await message.reply("У тебя нет прав админа!")
-        return
-    if not message.reply_to_message:
-        await message.reply("Ответь этой командой на сообщение нарушителя!")
-        return
-
-    duration = parse_time(command.args)
-    until_date = datetime.now() + duration
-    target_user = message.reply_to_message.from_user
-
-    try:
-        await bot.restrict_chat_member(
-            chat_id=message.chat.id,
-            user_id=target_user.id,
-            permissions=types.ChatPermissions(can_send_messages=False),
-            until_date=until_date
-        )
-        await message.reply(f"🤐 Пользователь {target_user.full_name} отправлен в мут на {command.args or '10m'}.")
-    except Exception as e:
-        await message.reply(f"Не удалось замутить (проверь права бота): {e}")
-
-@dp.message(Command("unmute"))
-async def unmute_user(message: types.Message):
-    if not await is_admin(message, message.from_user.id):
-        return
-    if not message.reply_to_message:
-        await message.reply("Ответь этой командой на сообщение пользователя!")
-        return
-
-    target_user = message.reply_to_message.from_user
-    try:
-        await bot.restrict_chat_member(
-            chat_id=message.chat.id,
-            user_id=target_user.id,
-            permissions=types.ChatPermissions(
-                can_send_messages=True,
-                can_send_media_messages=True,
-                can_send_other_messages=True,
-                can_add_web_page_previews=True
-            )
-        )
-        await message.reply(f"🔊 Мут с пользователя {target_user.full_name} снят.")
-    except Exception as e:
-        await message.reply(f"Ошибка при снятии мута: {e}")
-
-@dp.message(Command("ban"))
-async def ban_user(message: types.Message):
-    if not await is_admin(message, message.from_user.id):
-        await message.reply("Эта команда доступна только админам.")
-        return
-    if not message.reply_to_message:
-        await message.reply("Ответь этой командой на сообщение нарушителя!")
-        return
-
-    target_user = message.reply_to_message.from_user
-    try:
-        await bot.ban_chat_member(chat_id=message.chat.id, user_id=target_user.id)
-        await message.reply(f"🚫 Пользователь {target_user.full_name} забанен.")
-    except Exception as e:
-        await message.reply(f"Не удалось забанить: {e}")
-
-@dp.message(Command("kick"))
-async def kick_user(message: types.Message):
-    if not await is_admin(message, message.from_user.id):
-        return
-    if not message.reply_to_message:
-        await message.reply("Ответь этой командой на сообщение!")
-        return
-
-    target_user = message.reply_to_message.from_user
-    try:
-        await bot.ban_chat_member(chat_id=message.chat.id, user_id=target_user.id)
-        await bot.unban_chat_member(chat_id=message.chat.id, user_id=target_user.id)
-        await message.reply(f"👢 Пользователь {target_user.full_name} кикнут из группы.")
-    except Exception as e:
-        await message.reply(f"Ошибка при кике: {e}")
-
-# --- ОБРАБОТКА ОБЩЕНИЯ (GEMINI 3.6 FLASH) ---
-
-@dp.message()
-async def chat_handler(message: types.Message):
-    if message.chat.type in ["group", "supergroup"]:
-        bot_obj = await bot.get_me()
-        is_mentioned = bot_obj.username in (message.text or "")
-        is_named = "айрис" in (message.text or "").lower()
-        is_reply_to_bot = message.reply_to_message and message.reply_to_message.from_user.id == bot_obj.id
-
-        if not (is_mentioned or is_named or is_reply_to_bot):
-            return
-
-    try:
-        response = ai_client.models.generate_content(
-            model="gemini-3.6-flash",
-            contents=f"Ты — Айрис, дружелюбная и умная девушка-помощник. Сообщение: {message.text}"
-        )
-        await message.reply(response.text)
-    except Exception as e:
-        print(f"Ошибка Gemini: {e}")
-async def handle(request):
-    return web.Response(text="Bot is running!")
-
+import random
+import logging
+from aiogram import Bot, Dispatcher, Router, F
+from aiogram.types import Message
+from aiogram.filters import Command
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 
-# --- НАСТРОЙКА ВЕБХУКА ДЛЯ RENDER ---
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+
+# Получаем токен из переменных окружения Render
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise ValueError("Не найден BOT_TOKEN в переменных окружения!")
+
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
+router = Router()
+
+# --- ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ПРОВЕРКИ ПРАВ АДМИНА ---
+async def is_user_admin(message: Message) -> bool:
+    # В ЛС (личных сообщениях) пользователь всегда сам себе хозяин
+    if message.chat.type == "private":
+        return True
+    
+    try:
+        member = await bot.get_chat_member(message.chat.id, message.from_user.id)
+        # Проверяем, является ли пользователь создателем (creator) или администратором (administrator)
+        if member.status in ["creator", "administrator"]:
+            return True
+    except Exception as e:
+        logging.error(f"Ошибка при проверке прав админа: {e}")
+    
+    return False
+
+# --- МИНИ-ПРОГНОЗЫ ---
+PREDICTIONS = [
+    "сегодня звезды шепчут: завари чаёк и отдыхай.",
+    "жди прилива сил... который быстро пройдет.",
+    "главный враг сегодня — залипание в телефон до ночи.",
+    "отличный день, чтобы отменить планы и лечь спать пораньше.",
+    "кто-то попытается тебя обмануть, и это будешь ты перед сном («ещё одну серию»).",
+    "фортуна на твоей стороне!",
+    "отличный момент для классных идей.",
+    "сегодня всё получится легко и быстро."
+]
+
+@router.message(Command("start"))
+async def cmd_start(message: Message):
+    await message.answer("Привет! Airis на связи. Мониторю чат и помогаю с порядком.")
+
+@router.message(Command("predict"))
+async def cmd_predict(message: Message):
+    prediction = random.choice(PREDICTIONS)
+    user_name = message.from_user.first_name
+    await message.reply(f"🔮 {user_name}, прогноз на сегодня: {prediction}")
+
+# --- МОДЕРАЦИЯ (МУТ, БАН) С ПРОВЕРКОЙ ПРАВ АДМИНОВ ---
+
+@router.message(Command("ban"))
+async def cmd_ban(message: Message):
+    # Проверяем, админ ли тот, кто вызвал команду
+    if not await is_user_admin(message):
+        await message.reply("⛔️ Эту команду могут использовать только администраторы чата!")
+        return
+
+    # Проверяем, ответил ли админ на сообщение нарушителя
+    if not message.reply_to_message:
+        await message.reply("⚠️ Эту команду нужно использовать ответом на сообщение пользователя, которого нужно забанить!")
+        return
+
+    user_to_ban = message.reply_to_message.from_user
+    try:
+        # Баним пользователя в чате
+        await message.chat.ban(user_to_ban.id)
+        await message.reply(f"🔨 Пользователь {user_to_ban.full_name} заблокирован.")
+    except Exception as e:
+        await message.reply(f"❌ Не удалось забанить пользователя. Убедитесь, что бот — администратор с правами бана.\nОшибка: {e}")
+
+@router.message(Command("mute"))
+async def cmd_mute(message: Message):
+    if not await is_user_admin(message):
+        await message.reply("⛔️ Эту команду могут использовать только администраторы чата!")
+        return
+
+    if not message.reply_to_message:
+        await message.reply("⚠️ Эту команду нужно использовать ответом на сообщение пользователя, которого нужно отправить в мут!")
+        return
+
+    user_to_mute = message.reply_to_message.from_user
+    try:
+        # Ограничиваем права пользователя (запрещаем писать сообщения в чат)
+        from aiogram.types import ChatPermissions
+        permissions = ChatPermissions(can_send_messages=False)
+        await message.chat.restrict(user_to_mute.id, permissions=permissions)
+        await message.reply(f"🔇 Пользователь {user_to_mute.full_name} отправлен в мут.")
+    except Exception as e:
+        await message.reply(f"❌ Не удалось ограничить пользователя. Убедитесь, что у бота есть права администратора.\nОшибка: {e}")
+
+@router.message(Command("unmute"))
+async def cmd_unmute(message: Message):
+    if not await is_user_admin(message):
+        await message.reply("⛔️ Эту команду могут использовать только администраторы чата!")
+        return
+
+    if not message.reply_to_message:
+        await message.reply("⚠️ Ответьте на сообщение пользователя, чтобы снять мут.")
+        return
+
+    user_to_unmute = message.reply_to_message.from_user
+    try:
+        # Возвращаем стандартные права на отправку сообщений
+        from aiogram.types import ChatPermissions
+        permissions = ChatPermissions(
+            can_send_messages=True,
+            can_send_media_messages=True,
+            can_send_other_messages=True,
+            can_add_web_page_previews=True
+        )
+        await message.chat.restrict(user_to_unmute.id, permissions=permissions)
+        await message.reply(f"🔊 С пользователя {user_to_unmute.full_name} сняты ограничения.")
+    except Exception as e:
+        await message.reply(f"❌ Ошибка снятия мута: {e}")
+
+# --- ОБРАБОТЧИК ОБЫЧНЫХ СООБЩЕНИЙ ---
+@router.message()
+async def echo_handler(message: Message):
+    if message.text:
+        if len(message.text) > 100 or "подробно" in message.text.lower() or "расскажи" in message.text.lower():
+            await message.answer("Ты попросил(а) подробный ответ. Все системы активны, модерация на страже порядка!")
+        else:
+            # Для обычных коротких сообщений просто держим тишину или нейтральный отклик, чтобы не спамить в чате
+            pass
+
+# --- НАСТРОЙКА ВЕБХУКОВ ДЛЯ RENDER ---
 WEBHOOK_PATH = f"/{BOT_TOKEN}"
 WEBHOOK_URL = f"https://airis-bot.onrender.com{WEBHOOK_PATH}"
 
-
-async def on_startup(app: web.Application):
-  # Устанавливаем вебхук в Telegram при старте
-  await bot.set_webhook(WEBHOOK_URL)
-
+async def on_startup(bot: Bot):
+    await bot.set_webhook(WEBHOOK_URL)
 
 def main():
-  app = web.Application()
+    dp.include_router(router)
+    dp.startup.register(on_startup)
 
-  # Регистрируем обработчик входящих запросов от Telegram
-  webhook_requests_handler = SimpleRequestHandler(
-      dispatcher=dp,
-      bot=bot,
-  )
-  webhook_requests_handler.register(app, path=f"/{WEBHOOK_PATH}")
-
-  # Настраиваем приложение
-  setup_application(app, dp, bot=bot)
-  app.on_startup.append(on_startup)
-
-  # Запускаем веб-сервер на порту, который требует Render
-  port = int(os.environ.get("PORT", 10000))
-  web.run_app(app, host="0.0.0.0", port=port)
-
-
-import traceback
-
-
-def main():
-  try:
     app = web.Application()
-
+    
     webhook_requests_handler = SimpleRequestHandler(
         dispatcher=dp,
         bot=bot,
     )
-    webhook_requests_handler.register(app, path=f"/{WEBHOOK_PATH}")
-
+    webhook_requests_handler.register(app, path=WEBHOOK_PATH)
+    
     setup_application(app, dp, bot=bot)
-    app.on_startup.append(on_startup)
-
-    port = int(os.environ.get("PORT", 10000))
+    
+    port = int(os.environ.get("PORT", 8080))
     web.run_app(app, host="0.0.0.0", port=port)
-  except Exception as e:
-    print("CRITICAL STARTUP ERROR:")
-    traceback.print_exc()
-    raise e
-
 
 if __name__ == "__main__":
-  try:
     main()
-  except Exception as e:
-    print("CRITICAL STARTUP ERROR:")
-    traceback.print_exc()
-    raise e
