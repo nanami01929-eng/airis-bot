@@ -138,19 +138,19 @@ async def echo_handler(message: Message):
 WEBHOOK_PATH = f"/{BOT_TOKEN}"
 WEBHOOK_URL = f"https://airis-bot.onrender.com{WEBHOOK_PATH}"
 
-@router.message(Command("predict"))
-async def cmd_predict(message: Message):
-    prediction = random.choice(PREDICTIONS)
-    user_name = message.from_user.first_name
-    await message.reply(f"🔮 {user_name}, прогноз на сегодня: {prediction}")
-
-# --- СЮДА ВСТАВЛЯЕМ ОБРАБОТЧИК ТЕКСТА ---
 @router.message()
 async def handle_any_text(message: Message):
+    if not message.text:
+        return
+    
     text = message.text.lower()
+    print(f"ПОЛУЧЕН ТЕКСТ: {text}") # Эта строчка покажет в логах Render всё, что пишет пользователь
+    
     if "привет" in text:
         await message.answer(f"Привет, {message.from_user.first_name}! Как настроение?")
-
+    else:
+        # Можешь пока ничего не писать или отправить заглушку для проверки
+        pass
 # --- НАСТРОЙКА ВЕБХУКОВ ДЛЯ RENDER ---
 WEBHOOK_PATH = f"/{BOT_TOKEN}"
 WEBHOOK_URL = f"https://airis-bot.onrender.com{WEBHOOK_PATH}"
