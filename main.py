@@ -16,8 +16,8 @@ from aiogram.exceptions import TelegramBadRequest
 logging.basicConfig(level=logging.INFO)
 
 # Конфигурация
-TOKEN = "8984930047:AAH6lbrA-ROBpkSFszhwlwp5ghV-gYqkMNM"
-OWNER_ID = 8470088909  # Сюда впиши свой Telegram ID, чтобы тебя никто не мог «тронуть»
+TOKEN = "8984930047:AAH6lbhAI-ROBpksFszhwlp5ghV-gYqkMNM"
+OWNER_ID = 8470088909  # Твой Telegram ID (защита хозяина)
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
@@ -105,6 +105,7 @@ async def cmd_mute(message: Message, command: CommandObject):
             permissions=ChatPermissions(can_send_messages=False),
             until_date=until_time
         )
+        # Исправлено: заменено несуществующее поле на target.full_name
         await message.answer(f"🤐 Пользователь {target.full_name} замучен на {minutes} минут.")
     except TelegramBadRequest as e:
         await message.answer(f"Не удалось выдать мут: {e}")
@@ -229,7 +230,8 @@ async def cmd_unwarn(message: Message):
     chat_id = message.chat.id
     target = message.reply_to_message.from_user
     user_id = target.id
- if chat_id in warnings_storage and warnings_storage[chat_id].get(user_id, 0) > 0:
+
+    if chat_id in warnings_storage and warnings_storage[chat_id].get(user_id, 0) > 0:
         warnings_storage[chat_id][user_id] -= 1
         current_warns = warnings_storage[chat_id][user_id]
         await message.answer(f"✅ С {target.full_name} снят варн. Осталось: {current_warns}/3.")
@@ -258,8 +260,8 @@ async def handle_social_actions(message: Message):
     target = message.reply_to_message.from_user
 
     # Защита хозяина: если кто-то пытается применить действие на тебя
-    if target.id == OWNER_ID: 8470088909
-        await message.reply("Не могу тронуть своего хозяина! 🛡️")
+    if target.id == OWNER_ID:
+        await message.reply("Не могу тронуть своего хозяина! 🛡")
         return
 
     actor = message.from_user.first_name
