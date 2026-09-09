@@ -272,10 +272,13 @@ async def handle_social_actions(message: Message):
     await message.answer(response_text)
 
 
-# --- ЗАПУСК БОТА ---
 async def main():
-    await set_commands(bot)
+    # Удаляем старый вебхук и сбрасываем зависшие апдейты
+    await bot.delete_webhook(drop_pending_updates=True)
+    
+    # Запускаем поллинг
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
+    import asyncio
     asyncio.run(main())
