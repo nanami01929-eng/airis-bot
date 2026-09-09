@@ -16,7 +16,7 @@ from aiogram.exceptions import TelegramBadRequest
 logging.basicConfig(level=logging.INFO)
 
 # Конфигурация
-TOKEN = "8984930047:AAH6lbhAI-ROBpksFszhwlp5ghV-gYqkMNM"
+TOKEN = "8984930047:AAH6lbrA-ROBpkSFszhwlwp5ghV-gYqkMNM"
 OWNER_ID = 8470088909  # Твой Telegram ID (защита хозяина)
 
 bot = Bot(token=TOKEN)
