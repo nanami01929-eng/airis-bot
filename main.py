@@ -5,6 +5,8 @@ from database import (
     get_pair_xp, get_relationship_level,
     get_all_marriages, get_user_all_relations, get_db
 )
+from aiohttp import web
+import os
 import logging
 from aiogram import Bot, Dispatcher, Router, F
 from aiogram.types import Message
@@ -158,7 +160,20 @@ async def chat_with_misa(message: Message):
     response = misa_chat.send_message(message.text)
     await message.answer(response.text)
 
+async def handle(request):
+    return web.Response(text="I'm alive!")
+
+app = web.Application()
+app.router.add_get("/", handle)
+
+async def web_server():
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 10000))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
 async def main():
+    await web_server()
     dp.include_router(router)
     await bot.delete_webhook(drop_pending_updates=True)
     print("Бот Миса Амане запущен и готов к работе!")
