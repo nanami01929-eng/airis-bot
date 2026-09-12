@@ -12,13 +12,9 @@ from google import genai
 logging.basicConfig(level=logging.INFO)
 
 # Получаем токены из переменных окружения Render
-BOT_TOKEN = os.getenv("8984930047:AAH6lbrA-ROBpkSFszhwlwp5ghV-gYqkMNM")
-if not BOT_TOKEN:
-    raise ValueError("Не найден BOT_TOKEN в переменных окружения!")
-
-GEMINI_API_KEY = os.getenv("AQ.Ab8RN6Kq2jUa2zXWsFmZuIpw6hNPVGp7oICTY-PJ-Vf9wHIsPg")
-if not GEMINI_API_KEY:
-    raise ValueError("Не найден GEMINI_API_KEY в переменных окружения!")
+# Убираем os.getenv и проверки, ставим ключи напрямую
+BOT_TOKEN = "8984930047:AAH61brA-RObpkSFszhwLwp5ghV-gYqkmNw"
+GEMINI_API_KEY = "AQ.Ab8RN6Kq2jUa2zXWsFmZuIpw6hNPVGp7oICTY-PJ-Vf9wHIsPg"
 
 OWNER_ID = 847008909  # Твой ID (Лайт-кун)
 
