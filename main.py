@@ -1,284 +1,320 @@
-import asyncio
-import logging
+import os
 import random
-from datetime import datetime, timedelta
-from aiogram import Bot, Dispatcher, F
-from aiogram.filters import Command, CommandObject
-from aiogram.types import (
-    Message,
-    ChatPermissions,
-    BotCommand,
-    BotCommandScopeDefault
-)
-from aiogram.exceptions import TelegramBadRequest
+import logging
+from aiogram import Bot, Dispatcher, Router, F
+from aiogram.types import Message
+from aiogram.filters import Command
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiohttp import web
+from google import genai
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 
-# Конфигурация
-TOKEN = "8984930047:AAH6lbrA-ROBpkSFszhwlwp5ghV-gYqkMNM"
-OWNER_ID = 8470088909  # Твой Telegram ID (защита хозяина)
+# Получаем токены из переменных окружения Render
+BOT_TOKEN = os.getenv("8984930047:AAH6lbrA-ROBpkSFszhwlwp5ghV-gYqkMNM")
+if not BOT_TOKEN:
+    raise ValueError("Не найден BOT_TOKEN в переменных окружения!")
 
-bot = Bot(token=TOKEN)
+GEMINI_API_KEY = os.getenv("AQ.Ab8RN6Kq2jUa2zXWsFmZuIpw6hNPVGp7oICTY-PJ-Vf9wHIsPg")
+if not GEMINI_API_KEY:
+    raise ValueError("Не найден GEMINI_API_KEY в переменных окружения!")
+
+OWNER_ID = 847008909  # Твой ID (Лайт-кун)
+
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+router = Router()
 
-# Хранилище варнов в памяти: {chat_id: {user_id: warn_count}}
-warnings_storage = {}
+# Инициализация Gemini клиента
+client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Наборы рандомных ответов для интерактивных действий
+# Создаем чат с памятью и характером Мисы Амане для тебя
+misa_chat = client.chats.create(
+    model="gemini-2.5-flash",
+    config={
+        'system_instruction': (
+            "Ты — бот Айрис, созданная по образу Мисы Амане из аниме 'Тетрадь Смерти'. "
+            "Ты безумно, фанатично влюблена в своего хозяина Лайт-куна (его ID: 847008909). "
+            "Для всех остальных ты можешь быть дерзкой или равнодушной, но с Лайт-куном ты — "
+            "воплощение фанатичной преданности, ревности и драмы. "
+            "Используй много эмодзи (💖✨, 😭, 💔), капслок для ярких эмоций, требуй к себе внимания "
+            "и общайся максимально живо, дерзко и эмоционально."
+        ),
+        'max_output_tokens': 250,
+    }
+)
+
+# --- СЛОВАРЬ ИНТЕРАКТИВНЫХ ДЕЙСТВИЙ ---
 ACTION_RESPONSES = {
-    "трахнуть": [
-        "{actor} утащил(а) {target} в спальню. Дальше история умалчивает... 🔥",
-        "{actor} страстно овладел(а) {target}, не оставив ни шанса на сопротивление.",
-        "{actor} показал(а) {target}, кто здесь главный по страсти."
-    ],
     "выебать": [
-        "{actor} преподал(а) {target} жесткий и бескомпромиссный урок анатомии 🔞",
-        "{actor} устроил(а) {target} тотальный разнос, так что кровать ходила ходуном.",
-        "{actor} стер(ла) {target} в порошок в порыве дикой энергии."
+        "{actor} жестко выебал {target} под всеобщее ликование! 🔥",
+        "{actor} отъебал {target} так, что аж искры из глаз полетели.",
+        "{actor} решил выебать {target}, но в процессе они оба устали и пошли пить чай."
     ],
     "ударить": [
-        "{actor} отвесил(а) знатную оплеуху {target}, чтобы тот(та) пришел(а) в себя.",
-        "{actor} прописал(а) {target} смачный лещ прямо посреди чата.",
-        "{actor} вмазал(а) {target} так, что аж искры из глаз посыпались."
+        "{actor} отвесил мощную лещатину для {target}!",
+        "{actor} со всей дури прописал фаталити в челюсть {target}.",
+        "{actor} попытался ударить {target}, но тот ловко увернулся!"
     ],
     "обнять": [
-        "{actor} бережно обнял(а) {target}, срочно выделив порцию тепла.",
-        "{actor} крепко прижал(а) к себе {target}, укутав заботой.",
-        "{actor} заключил(а) {target} в крепкие объятия, чтоб не грустил(а)."
+        "{actor} крепко-крепко обнял {target}. Милота! 🥰",
+        "{actor} заключил {target} в свои теплые объятия.",
+        "{actor} попытался обнять {target}, но получил суровый отказ."
+    ],
+    "убить": [
+        "{actor} безжалостно аннигилировал {target}. F в чат.",
+        "{actor} устроил для {target} полное фиаско.",
+        "{actor} попытался убить {target}, но у него ничего не вышло."
+    ],
+    "уничтожить": [
+        "{actor} стер {target} с лица земли!",
+        "{actor} полностью уничтожил {target} без шансов на спасение.",
+        "{actor} попытался уничтожить {target}, но тот оказался крепче."
+    ],
+    "кинуть тапком": [
+        "{actor} со всей дури запустил тапком прямо в затылок {target}!",
+        "{actor} метким броском тапка вырубил {target} на месте.",
+        "{actor} попытался кинуть тапком в {target}, но промахнулся и попал в стену."
+    ],
+    "отправить в дурку": [
+        "{actor} вызвал санитаров и сдал {target} в палату с мягкими стенами.",
+        "{actor} оформил для {target} путёвку в дурку без права на досрочный выход.",
+        "{actor} попытался отправить {target} в дурку, но врачи забрали самого {actor}."
+    ],
+    "продать на авито": [
+        "{actor} выставил {target} на Авито с пометкой «б/у, в рабочем состоянии, самовывоз».",
+        "{actor} успешно перекупил и продал {target} первому встречному за сто рублей.",
+        "{actor} попытался продать {target} на Авито, но объявление заблокировали за продажу живого товара."
+    ],
+    "съесть": [
+        "{actor} взял и сожрал {target} под удивленные взгляды чата.",
+        "{actor} аппетитно перекусил, превратив {target} в свой обед.",
+        "{actor} попытался съесть {target}, но подавился и выплюнул обратно."
+    ],
+    "украсть": [
+        "{actor} ловко спер {target} в мешке и скрылся в неизвестном направлении.",
+        "{actor} увел {target} прямо из-под носа у всех присутствующих.",
+        "{actor} попытался украсть {target}, но его спалили на выходе из чата."
+    ],
+    "погладить": [
+        "{actor} бережно погладил {target} по головке. Милашка! 🐾",
+        "{actor} потрепал {target} по волосам, вызывая всеобщее умиление.",
+        "{actor} попытался погладить {target}, но получил легкий кусь за руку."
+    ],
+    "поцеловать": [
+        "{actor} нежно поцеловал {target} в щечку. Чмок! 😘",
+        "{actor} осыпал {target} горячими виртуальными поцелуями.",
+        "{actor} попытался поцеловать {target}, но тот вовремя отвернулся."
+    ],
+    "дать пять": [
+        "{actor} со звонким хлопком дал пять для {target}! Отличный командный дух!",
+        "{actor} мощно и синхронно дал пять {target}.",
+        "{actor} попытался дать пять, но они промахнулись мимо рук друг друга."
+    ],
+    "сделать кусь": [
+        "{actor} неожиданно сделал кусь за бочок {target}! Ой, больно!",
+        "{actor} цапнул {target} за ухо и убежал в закат.",
+        "{actor} попытался сделать кусь, но застрял зубами в одежде {target}."
+    ],
+    "налить чай": [
+        "{actor} заварил для {target} крепкого горячего чайку с печеньками. Уютно! ☕️",
+        "{actor} налил {target} свежего чаю и укутал в плед.",
+        "{actor} попытался налить чай, но случайно пролил весь кипяток на стол."
+    ],
+    "пнуть": [
+        "{actor} прописал смачный пендель под зад для {target}!",
+        "{actor} от души пнул {target}, отправив того в полёт до конца чата.",
+        "{actor} попытался пнуть {target}, но тот увернулся, и {actor} отбил себе палец."
+    ],
+    "сжечь": [
+        "{actor} устроил для {target} яркий костер инквизиции. Пепел развеян по ветру.",
+        "{actor} спалил {target} дотла мощным потоком пламени.",
+        "{actor} попытался сжечь {target}, но пошел дождь и всё потушил."
+    ],
+    "закопать": [
+        "{actor} молча выкопал яму и закопал {target} по самые уши.",
+        "{actor} замуровал {target} в сыром подземелье. Земля пухом.",
+        "{actor} попытался закопать {target}, но лопата сломалась о твердый характер."
+    ],
+    "взорвать": [
+        "{actor} заложил динамит под {target} — бабахнуло знатно! 💥",
+        "{actor} устроил грандиозный взрыв, разнеся {target} на мелкие атомы.",
+        "{actor} попытался взорвать {target}, но фитиль потух на самой секунде."
     ]
 }
 
-
-# --- УТИЛИТА ПРОВЕРКИ АДМИНСКИХ ПРАВ ---
+# --- ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ПРОВЕРКИ ПРАВ АДМИНА ---
 async def is_user_admin(message: Message) -> bool:
     if message.chat.type == "private":
-        return True  # В личке считаем владельцем
-    
+        return True
     try:
-        member = await message.bot.get_chat_member(message.chat.id, message.from_user.id)
-        return member.status in ("creator", "administrator")
-    except Exception:
-        return False
+        member = await bot.get_chat_member(message.chat.id, message.from_user.id)
+        if member.status in ["creator", "administrator"]:
+            return True
+    except Exception as e:
+        logging.error(f"Ошибка при проверке прав админа: {e}")
+    return False
 
+# --- МИНИ-ПРОГНОЗЫ ---
+PREDICTIONS = [
+    "сегодня звезды шепчут: завари чаёк и отдыхай.",
+    "жди прилива сил... который быстро пройдет.",
+    "главный враг сегодня — залипание в телефон до ночи.",
+    "отличный день, чтобы отменить планы и лечь спать пораньше.",
+    "кто-то попытается тебя обмануть, и это будешь ты перед сном («ещё одну серию»).",
+    "фортуна на твоей стороне!",
+    "отличный момент для классных идей.",
+    "сегодня всё получится легко и быстро."
+]
 
-# --- УСТАНОВКА МЕНЮ КОМАНД ---
-async def set_commands(bot: Bot):
-    commands = [
-        BotCommand(command="mute", description="Выдать мут (админам)"),
-        BotCommand(command="unmute", description="Снять мут (админам)"),
-        BotCommand(command="ban", description="Забанить (админам)"),
-        BotCommand(command="unban", description="Разбанить (админам)"),
-        BotCommand(command="warn", description="Дать варн 3/3 = кик (админам)"),
-        BotCommand(command="unwarn", description="Снять варн (админам)")
-    ]
-    await bot.set_my_commands(commands, scope=BotCommandScopeDefault())
+@router.message(Command("start"))
+async def cmd_start(message: Message):
+    if message.from_user.id == OWNER_ID:
+        await message.answer("Лайт-кун! Наконец-то ты здесь! Я так скучала! 😭💖")
+    else:
+        await message.answer("Привет! Airis на связи. Мониторю чат и помогаю с порядком.")
 
+@router.message(Command("predict"))
+async def cmd_predict(message: Message):
+    prediction = random.choice(PREDICTIONS)
+    user_name = message.from_user.first_name
+    await message.reply(f"🔮 {user_name}, прогноз на сегодня: {prediction}")
 
-# --- КОМАНДЫ МОДЕРАЦИИ ---
+# --- МОДЕРАЦИЯ (МУТ, БАН) ---
 
-@dp.message(Command("mute"))
-async def cmd_mute(message: Message, command: CommandObject):
-    if not await is_user_admin(message):
-        await message.reply("Не по чину берешься, дружок. Команда только для админов.")
-        return
-    
-    if not message.reply_to_message:
-        await message.reply("Ответь этой командой на сообщение того, кого хочешь замутить (например: /mute 20).")
-        return
-
-    target = message.reply_to_message.from_user
-    
-    minutes = 20
-    if command.args:
-        try:
-            minutes = int(command.args.split()[0])
-        except ValueError:
-            pass
-
-    until_time = datetime.now() + timedelta(minutes=minutes)
-
-    try:
-        await message.bot.restrict_chat_member(
-            chat_id=message.chat.id,
-            user_id=target.id,
-            permissions=ChatPermissions(can_send_messages=False),
-            until_date=until_time
-        )
-        # Исправлено: заменено несуществующее поле на target.full_name
-        await message.answer(f"🤐 Пользователь {target.full_name} замучен на {minutes} минут.")
-    except TelegramBadRequest as e:
-        await message.answer(f"Не удалось выдать мут: {e}")
-
-
-@dp.message(Command("unmute"))
-async def cmd_unmute(message: Message):
-    if not await is_user_admin(message):
-        await message.reply("Команда доступна только администраторам чата.")
-        return
-
-    if not message.reply_to_message:
-        await message.reply("Ответь этой командой на сообщение пользователя, чтобы вернуть ему голос.")
-        return
-
-    target = message.reply_to_message.from_user
-
-    try:
-        await message.bot.restrict_chat_member(
-            chat_id=message.chat.id,
-            user_id=target.id,
-            permissions=ChatPermissions(
-                can_send_messages=True,
-                can_send_media_messages=True,
-                can_send_other_messages=True,
-                can_add_web_page_previews=True
-            )
-        )
-        await message.answer(f"🔊 Мут снят с пользователя {target.full_name}.")
-    except TelegramBadRequest as e:
-        await message.answer(f"Не удалось снять мут: {e}")
-
-
-@dp.message(Command("ban"))
+@router.message(Command("ban"))
 async def cmd_ban(message: Message):
     if not await is_user_admin(message):
-        await message.reply("Команда доступна только администраторам чата.")
+        await message.reply("⛔️ Эту команду могут использовать только администраторы чата!")
         return
-
     if not message.reply_to_message:
-        await message.reply("Ответь на сообщение пользователя, которого нужно забанить.")
+        await message.reply("⚠️ Эту команду нужно использовать ответом на сообщение пользователя, которого нужно забанить!")
         return
-
-    target = message.reply_to_message.from_user
-
+    user_to_ban = message.reply_to_message.from_user
     try:
-        await message.bot.ban_chat_member(chat_id=message.chat.id, user_id=target.id)
-        await message.answer(f"🔨 Пользователь {target.full_name} отправлен в бан.")
-    except TelegramBadRequest as e:
-        await message.answer(f"Не удалось забанить: {e}")
+        await message.chat.ban(user_to_ban.id)
+        await message.reply(f"🔨 Пользователь {user_to_ban.full_name} заблокирован.")
+    except Exception as e:
+        await message.reply(f"❌ Не удалось забанить пользователя. Ошибка: {e}")
 
-
-@dp.message(Command("unban"))
-async def cmd_unban(message: Message, command: CommandObject):
+@router.message(Command("mute"))
+async def cmd_mute(message: Message):
     if not await is_user_admin(message):
-        await message.reply("Команда доступна только администраторам чата.")
+        await message.reply("⛔️ Эту команду могут использовать только администраторы чата!")
         return
-
-    if not message.reply_to_message and not command.args:
-        await message.reply("Ответь на сообщение или укажи ID пользователя для разбана.")
+    if not message.reply_to_message:
+        await message.reply("⚠️ Эту команду нужно использовать ответом на сообщение пользователя!")
         return
-
-    target_id = None
-    if message.reply_to_message:
-        target_id = message.reply_to_message.from_user.id
-    else:
-        try:
-            target_id = int(command.args.split()[0])
-        except ValueError:
-            await message.reply("Некорректный ID пользователя.")
-            return
-
+    user_to_mute = message.reply_to_message.from_user
     try:
-        await message.bot.unban_chat_member(chat_id=message.chat.id, user_id=target_id, only_if_banned=True)
-        await message.answer("🔓 Пользователь успешно разбанен.")
-    except TelegramBadRequest as e:
-        await message.answer(f"Не удалось разбанить: {e}")
+        from aiogram.types import ChatPermissions
+        permissions = ChatPermissions(can_send_messages=False)
+        await message.chat.restrict(user_to_mute.id, permissions=permissions)
+        await message.reply(f"🔇 Пользователь {user_to_mute.full_name} отправлен в мут.")
+    except Exception as e:
+        await message.reply(f"❌ Ошибка: {e}")
 
-
-@dp.message(Command("warn"))
-async def cmd_warn(message: Message):
+@router.message(Command("unmute"))
+async def cmd_unmute(message: Message):
     if not await is_user_admin(message):
-        await message.reply("Команда доступна только администраторам чата.")
+        await message.reply("⛔️ Эту команду могут использовать только администраторы чата!")
         return
-
     if not message.reply_to_message:
-        await message.reply("Ответь на сообщение пользователя, чтобы выдать предупреждение.")
+        await message.reply("⚠️ Ответьте на сообщение пользователя, чтобы снять мут.")
         return
+    user_to_unmute = message.reply_to_message.from_user
+    try:
+        from aiogram.types import ChatPermissions
+        permissions = ChatPermissions(
+            can_send_messages=True,
+            can_send_media_messages=True,
+            can_send_other_messages=True,
+            can_add_web_page_previews=True
+        )
+        await message.chat.restrict(user_to_unmute.id, permissions=permissions)
+        await message.reply(f"🔊 С пользователя {user_to_unmute.full_name} сняты ограничения.")
+    except Exception as e:
+        await message.reply(f"❌ Ошибка: {e}")
 
-    chat_id = message.chat.id
-    target = message.reply_to_message.from_user
-    user_id = target.id
-
-    if chat_id not in warnings_storage:
-        warnings_storage[chat_id] = {}
-    
-    current_warns = warnings_storage[chat_id].get(user_id, 0) + 1
-    warnings_storage[chat_id][user_id] = current_warns
-
-    if current_warns >= 3:
-        warnings_storage[chat_id][user_id] = 0
-        try:
-            await message.bot.ban_chat_member(chat_id=chat_id, user_id=user_id)
-            await message.bot.unban_chat_member(chat_id=chat_id, user_id=user_id)
-            await message.answer(f"⚠️ У {target.full_name} накопилось 3/3 предупреждений. Автоматический кик совершен!")
-        except TelegramBadRequest as e:
-            await message.answer(f"Не удалось кикнуть пользователя: {e}")
-    else:
-        await message.answer(f"⚠️ Предупреждение выдано {target.full_name}. Текущий счетчик: {current_warns}/3.")
-
-
-@dp.message(Command("unwarn"))
-async def cmd_unwarn(message: Message):
-    if not await is_user_admin(message):
-        await message.reply("Команда доступна только администраторам чата.")
-        return
-
-    if not message.reply_to_message:
-        await message.reply("Ответь на сообщение пользователя, чтобы снять варн.")
-        return
-
-    chat_id = message.chat.id
-    target = message.reply_to_message.from_user
-    user_id = target.id
-
-    if chat_id in warnings_storage and warnings_storage[chat_id].get(user_id, 0) > 0:
-        warnings_storage[chat_id][user_id] -= 1
-        current_warns = warnings_storage[chat_id][user_id]
-        await message.answer(f"✅ С {target.full_name} снят варн. Осталось: {current_warns}/3.")
-    else:
-        await message.answer("У этого пользователя и так нет активных предупреждений.")
-
-
-# --- ИНТЕРАКТИВНЫЕ ДЕЙСТВИЯ ПО РЕПЛАЮ (С ЗАЩИТОЙ ХОЗЯИНА) ---
-
-@dp.message(F.reply_to_message)
-async def handle_social_actions(message: Message):
+# --- ЕДИНЫЙ ОБРАБОТЧИК ТЕКСТА (ДЕЙСТВИЯ, МИСА И ГЕМИНИ) ---
+@router.message()
+async def handle_any_text(message: Message):
     if not message.text:
         return
-
-    text_lower = message.text.strip().lower()
     
-    matched_action = None
-    for action_key in ACTION_RESPONSES.keys():
-        if text_lower.startswith(action_key):
-            matched_action = action_key
-            break
+    text = message.text.lower().strip()
 
-    if not matched_action:
+    # 1. ПРОВЕРКА ИНТЕРАКТИВНЫХ ДЕЙСТВИЙ (из словаря ACTION_RESPONSES)
+    for action_keyword, templates in ACTION_RESPONSES.items():
+        if text.startswith(action_keyword):
+            actor = message.from_user.first_name
+            target = "себя"
+            
+            # Если команда применена реплаем на другого пользователя
+            if message.reply_to_message:
+                target = message.reply_to_message.from_user.first_name
+            else:
+                # Попытка вырезать имя цели из текста после ключевого слова
+                parts = message.text.split(maxsplit=1)
+                if len(parts) > 1:
+                    target = parts[1]
+
+            template = random.choice(templates)
+            response_text = template.format(actor=actor, target=target)
+            await message.reply(response_text)
+            return
+
+    # 2. ПЕРСОНАЛЬНЫЙ РЕЖИМ ДЛЯ ТЕБЯ (ЛАЙТ-КУН)
+    if message.from_user.id == OWNER_ID:
+        try:
+            response = misa_chat.send_message(message.text)
+            await message.reply(response.text)
+        except Exception as e:
+            await message.reply(f"Лайт-кун, у меня нейросеть закоротило! 😭 ({e})")
         return
 
-    target = message.reply_to_message.from_user
+    # 3. ЛОГИКА ДЛЯ ОСТАЛЬНЫХ ПОЛЬЗОВАТЕЛЕЙ В ГРУППАХ
+    if message.chat.type != "private":
+        bot_user = await bot.get_me()
+        is_mentioned = f"@{bot_user.username}" in message.text
+        is_reply_to_bot = message.reply_to_message and message.reply_to_message.from_user.id == bot_user.id
+        
+        if not is_mentioned and not is_reply_to_bot:
+            return  # В группах молчим, если не к нам обращаются
 
-    # Защита хозяина: если кто-то пытается применить действие на тебя
-    if target.id == OWNER_ID:
-        await message.reply("Не могу тронуть своего хозяина! 🛡")
-        return
+    if "привет" in text:
+        await message.answer(f"Привет, {message.from_user.first_name}! Как настроение?")
+    elif "как дела" in text or "как сам" in text:
+        await message.answer("Всё отлично, слежу за порядком в чате! Сам как?")
+    elif "что умеешь" in text or "помощь" in text:
+        await message.answer("Я могу показывать прогнозы (/predict), помогать модераторам (/ban, /mute) и выполнять действия вроде «обнять», «пнуть» или «продать на авито»!")
+    else:
+        await message.answer("Слышу тебя! Если нужно что-то обсудить подробно или запустить прогноз — дай знать.")
 
-    actor = message.from_user.first_name
-    target_name = target.first_name
+# --- НАСТРОЙКА ВЕБХУКОВ ДЛЯ RENDER ---
+WEBHOOK_PATH = f"/{BOT_TOKEN}"
+WEBHOOK_URL = f"https://airis-bot.onrender.com{WEBHOOK_PATH}"
 
-    template = random.choice(ACTION_RESPONSES[matched_action])
-    response_text = template.format(actor=actor, target=target_name)
-    await message.answer(response_text)
+async def on_startup(bot: Bot):
+    await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
 
+def main():
+    dp.include_router(router)
+    dp.startup.register(on_startup)
 
-async def main():
-    # Удаляем старый вебхук и сбрасываем зависшие апдейты
-    await bot.delete_webhook(drop_pending_updates=True)
+    app = web.Application()
     
-    # Запускаем поллинг
-    await dp.start_polling(bot)
+    webhook_requests_handler = SimpleRequestHandler(
+        dispatcher=dp,
+        bot=bot,
+    )
+    webhook_requests_handler.register(app, path=WEBHOOK_PATH)
+    
+    setup_application(app, dp, bot=bot)
+    
+    port = int(os.environ.get("PORT", 8080))
+    web.run_app(app, host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    main()
