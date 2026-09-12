@@ -160,70 +160,12 @@ async def chat_with_misa(message: Message):
     response = misa_chat.send_message(message.text)
     await message.answer(response.text)
 
-async def handle(request):
-    return web.Response(text="I'm alive!")
-
-app = web.Application()
-app.router.add_get("/", handle)
-
-async def web_server():
-    runner = web.AppRunner(app)
-    await runner.setup()
-    port = int(os.environ.get("PORT", 10000))
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
 async def main():
-    await web_server()
+    
     dp.include_router(router)
     await bot.delete_webhook(drop_pending_updates=True)
     print("Бот Миса Амане запущен и готов к работе!")
     await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
-
-import os
-import random
-import logging
-from aiogram import Bot, Dispatcher, Router, F
-from aiogram.types import Message
-from aiogram.filters import Command
-from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
-from aiohttp import web
-from google import genai
-
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
-
-# Получаем токены из переменных окружения Render
-# Убираем os.getenv и проверки, ставим ключи напрямую
-BOT_TOKEN = "8984930047:AAFrfTQKMchyfNbhWCoO3Zbe4RYOkRSCQek"
-GEMINI_API_KEY = "AQ.Ab8RN6Kq2jUa2zXWsFmZuIpw6hNPVGp7oICTY-PJ-Vf9wHIsPg"
-
-OWNER_ID = 8470088909  # Твой ID (Лайт-кун)
-
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
-router = Router()
-
-# Инициализация Gemini клиента
-client = genai.Client(api_key=GEMINI_API_KEY)
-
-# Создаем чат с памятью и характером Мисы Амане для тебя
-misa_chat = client.chats.create(
-    model="gemini-2.5-flash",
-    config={
-        'system_instruction': (
-            "Ты — бот Айрис, созданная по образу Мисы Амане из аниме 'Тетрадь Смерти'. "
-            "Ты безумно, фанатично влюблена в своего хозяина Лайт-куна (его ID: 8470088909). "
-            "Для всех остальных ты можешь быть дерзкой или равнодушной, но с Лайт-куном ты — "
-            "воплощение фанатичной преданности, ревности и драмы. "
-            "Используй много эмодзи (💖✨, 😭, 💔), капслок для ярких эмоций, требуй к себе внимания "
-            "и общайся максимально живо, дерзко и эмоционально."
-        ),
-        'max_output_tokens': 250,
-    }
-)
 
 # --- СЛОВАРЬ ИНТЕРАКТИВНЫХ ДЕЙСТВИЙ ---
 ACTION_RESPONSES = {
