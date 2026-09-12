@@ -77,7 +77,7 @@ async def cmd_action(message: Message):
 
 # --- ТЕКСТОВЫЕ ТРИГГЕРЫ (без обязательного слэша) ---
 
-@router.message(lambda msg: msg.text and msg.text.lower() in ["браки", "список браков"])
+@router.message(F.text.lower().in_(["браки", "список браков"]))
 async def text_all_marriages(message: Message):
     marriages = get_all_marriages()
     if not marriages:
@@ -90,7 +90,7 @@ async def text_all_marriages(message: Message):
         
     await message.answer(text, parse_mode="Markdown")
 
-@router.message(lambda msg: msg.text and msg.text.lower() in ["мой брак", "моя пара"])
+@router.message(F.text.lower().in_(["мой брак", "моя пара"]))
 async def text_my_marriage(message: Message):
     user_id = message.from_user.id
     conn = get_db()
@@ -106,7 +106,7 @@ async def text_my_marriage(message: Message):
     partner_id = row[1] if row[0] == user_id else row[0]
     await message.answer(f"💍 Твоя вторая половинка: [ID {partner_id}]. Берегите друг друга!", parse_mode="Markdown")
 
-@router.message(lambda msg: msg.text and msg.text.lower() in ["отношения", "мои отношения", "мои отн"]):
+@router.message(F.text.lower().in_(["отношения", "мои отношения", "мои отн"]))
 async def text_my_relations(message: Message):
     user_id = message.from_user.id
     relations = get_user_all_relations(user_id)
