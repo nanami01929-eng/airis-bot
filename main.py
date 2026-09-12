@@ -16,7 +16,7 @@ from google import genai
 logging.basicConfig(level=logging.INFO)
 
 BOT_TOKEN = "8984930047:AAGcKATtGyqpVbun6hIPsugzaJIGDg16Y1M"
-GEMINI_API_KEY = "AQ.Ab8RN6Kq2jua2ZXWsFmZuiP6hNPVGP7oICTY-PJ-Vf9whIsI"
+GEMINI_API_KEY = "AQ.Ab8RN6Kq2jUa2zXWsFmZuIpw6hNPVGp7oICTY-PJ-Vf9wHIsPg"
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
