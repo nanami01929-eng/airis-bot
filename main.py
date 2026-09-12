@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.INFO)
 
 # Получаем токены из переменных окружения Render
 # Убираем os.getenv и проверки, ставим ключи напрямую
-BOT_TOKEN = "8984930047:AAH61brA-RObpkSFszhwLwp5ghV-gYqkmNw"
+BOT_TOKEN = "8984930047:AAFt1OvA4L7SoQ7JlZ4V5Y-YYaG53W2m-Us"
 GEMINI_API_KEY = "AQ.Ab8RN6Kq2jUa2zXWsFmZuIpw6hNPVGp7oICTY-PJ-Vf9wHIsPg"
 
 OWNER_ID = 847008909  # Твой ID (Лайт-кун)
