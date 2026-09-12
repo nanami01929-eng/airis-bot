@@ -6,7 +6,7 @@ from database import (
     get_all_marriages, get_user_all_relations, get_db
 )
 import logging
-from aiogram import Bot, Dispatcher, Router
+from aiogram import Bot, Dispatcher, Router, F
 from aiogram.types import Message
 from aiogram.filters import Command
 from google import genai
@@ -164,7 +164,7 @@ async def main():
     print("Бот Миса Амане запущен и готов к работе!")
     await dp.start_polling(bot)
 
-if name == "main":
+if __name__ == "__main__":
     asyncio.run(main())
 
 import os
