@@ -1,3 +1,11 @@
+import subprocess
+import sys
+
+try:
+    import google.generativeai
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "google-generativeai", "aiogram>=3.0.0"])
+
 import asyncio
 from database import (
     get_user_balance, do_action, 
