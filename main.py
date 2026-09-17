@@ -24,7 +24,7 @@ import google.generativeai as genai
 logging.basicConfig(level=logging.INFO)
 
 BOT_TOKEN = "8984930047:AAFrfTQKMchyfNbhWCoO3Zbe4RYOkRSCQek"
-GEMINI_API_KEY = "AQ.Ab8RN6JRyFtTBMcQxrYJeXzndJzgAFFDCeWbvm8nnV4SOzTf6A"
+GEMINI_API_KEY = "AIzaSyCtubjX-63XGhzTJOkL_e3qUtSFL_EeBaE"
 OWNER_ID = 8470088909  # Твой ID (Лайт-кун)
 
 bot = Bot(token=BOT_TOKEN)
