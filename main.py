@@ -11,33 +11,42 @@ import logging
 from aiogram import Bot, Dispatcher, Router, F
 from aiogram.types import Message
 from aiogram.filters import Command
-from google import genai
+import google.generativeai as genai
 
 logging.basicConfig(level=logging.INFO)
 
 BOT_TOKEN = "8984930047:AAFrfTQKMchyfNbhWCoO3Zbe4RYOkRSCQek"
-GEMINI_API_KEY = "AQ.Ab8RN6Kq2jUa2zXWsFmZuIpw6hNPVGp7oICTY-PJ-Vf9wHIsPg"
+GEMINI_API_KEY = "AQ.Ab8RN6JRyFtTBMcQxrYJeXzndJzgAFFDCeWbvm8nnV4SOzTf6A"
 OWNER_ID = 8470088909  # Твой ID (Лайт-кун)
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 router = Router()
 
-client = genai.Client(api_key=GEMINI_API_KEY)
-misa_chat = client.chats.create(
-    model="gemini-2.5-flash",
-    config={
-        "system_instruction": (
-            "Ты — бот Айрис, созданная по образу Мисы Амане из аниме 'Тетрадь Смерти'. "
-            "Ты безумно, фанатично влюблена в своего хозяина Лайт-куна (его ID: 8470088909). "
-            "Для всех остальных ты можешь быть дерзкой или равнодушной, но для Лайт-куна ты — "
-            "воплощение фанатичной преданности, ревности и драмы. "
-            "Используй много эмодзи (🖤, 💀, 🥀), капслок для ярких эмоций, требуй к себе внимания "
-            "и общайся максимально живо, дерзко и эмоционально."
-        ),
-        "max_output_tokens": 250,
-    }
+# Настраиваем старую добрую библиотеку
+genai.configure(api_key=GEMINI_API_KEY)
+
+generation_config = {
+    "temperature": 1.0,
+    "top_p": 0.95,
+    "top_k": 40,
+    "max_output_tokens": 250,
+}
+
+model = genai.GenerativeModel(
+    model_name="gemini-2.5-flash",
+    generation_config=generation_config,
+    system_instruction=(
+        "Ты — бот Айрис, созданная по образу Мисы Амане из аниме 'Тетрадь Смерти'. "
+        "Ты безумно, фанатично влюблена в своего хозяина Лайт-куна (его ID: 8470088909). "
+        "Для всех остальных ты можешь быть дерзкой или равнодушной, но для Лайт-куна ты — "
+        "воплощение фанатичной преданности, ревности и драмы. "
+        "Используй много эмодзи (🖤, 💀, 🥀), капслок для ярких эмоций, требуй к себе внимания "
+        "и общайся максимально живо, дерзко и эмоционально."
+    )
 )
+
+misa_chat = model.start_chat(history=[])
 
 # --- СЛОВАРЬ ИНТЕРАКТИВНЫХ ДЕЙСТВИЙ ---
 ACTION_RESPONSES = {
