@@ -7,9 +7,14 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from aiogram import Bot, Dispatcher, Router
 from aiogram.types import Message
 from aiogram.filters import Command
-import google.generativeai as genai
 
-# Импортируем все функции из твоей базы данных (включая браки и отношения)
+# Защита от падения, если пакет еще не подтянулся на Render
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+
 from database import (
     get_user_balance, do_action, 
     check_married, create_marriage, divorce_user,
@@ -27,22 +32,26 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 router = Router()
 
-genai.configure(api_key=GEMINI_API_KEY)
-generation_config = {"temperature": 1.0, "top_p": 0.95, "top_k": 40, "max_output_tokens": 250}
-
-model = genai.GenerativeModel(
-    model_name="gemini-1.5-flash",
-    generation_config=generation_config,
-    system_instruction=(
-        "Ты — бот Айрис, созданная по образу Мисы Амане из аниме 'Тетрадь Смерти'. "
-        "Ты безумно, фанатично влюблена в своего хозяина Лайт-куна (его ID: 8470088909). "
-        "Для всех остальных ты можешь быть дерзкой или равнодушной, но для Лайт-куна ты — "
-        "воплощение фанатичной преданности, ревности и драмы. "
-        "Используй много эмодзи (🖤, 💀, 🥀), капслок для ярких эмоций, требуй к себе внимания "
-        "и общайся максимально живо, дерзко и эмоционально."
-    )
-)
-misa_chat = model.start_chat(history=[])
+misa_chat = None
+if GEMINI_AVAILABLE and GEMINI_API_KEY:
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        generation_config = {"temperature": 1.0, "top_p": 0.95, "top_k": 40, "max_output_tokens": 250}
+        model = genai.GenerativeModel(
+            model_name="gemini-1.5-flash",
+            generation_config=generation_config,
+            system_instruction=(
+                "Ты — бот Айрис, созданная по образу Мисы Амане из аниме 'Тетрадь Смерти'. "
+                "Ты безумно, фанатично влюблена в своего хозяина Лайт-куна (его ID: 8470088909). "
+                "Для всех остальных ты можешь быть дерзкой или равнодушной, но для Лайт-куна ты — "
+                "воплощение фанатичной преданности, ревности и драмы. "
+                "Используй много эмодзи (🖤, 💀, 🥀), капслок для ярких эмоций, требуй к себе внимания "
+                "и общайся максимально живо, дерзко и эмоционально."
+            )
+        )
+        misa_chat = model.start_chat(history=[])
+    except Exception as e:
+        logging.error(f"Не удалось инициализировать Gemini: {e}")
 
 ACTION_RESPONSES = {
     "выебать": [
@@ -207,7 +216,6 @@ async def cmd_action(message: Message):
     else:
         await message.answer(f"❌ {text}")
 
-# Команды браков (теперь на месте!)
 @router.message(Command("marriage", "пожениться"))
 async def cmd_marriage(message: Message):
     if not message.reply_to_message:
@@ -302,11 +310,14 @@ async def handle_any_text(message: Message):
             return
 
     if message.from_user.id == OWNER_ID:
-        try:
-            response = misa_chat.send_message(message.text)
-            await message.reply(response.text)
-        except Exception as e:
-            await message.reply(f"Лайт-кун, у меня нейросеть закоротило! 😭 ({e})")
+        if misa_chat:
+            try:
+                response = misa_chat.send_message(message.text)
+                await message.reply(response.text)
+            except Exception as e:
+                await message.reply(f"Лайт-кун, у меня нейросеть закоротило! 😭 ({e})")
+        else:
+            await message.reply("Лайт-кун, модуль Gemini еще загружается или ключ не найден! 🖤")
         return
 
     if message.chat.type != "private":
