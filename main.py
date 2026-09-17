@@ -1,16 +1,22 @@
-import subprocess
+import os
 import sys
+import subprocess
 
+# Авто-установка нужных библиотек
 try:
-    import google.generativeai
+    import aiohttp
+    import aiogram
 except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "google-generativeai", "aiogram>=3.0.0", "aiohttp"])
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "aiohttp", "aiogram>=3.0.0", "google-generativeai"])
 
 import asyncio
-import os
 import random
 import logging
-from aiohttp import web  # Сервер для Render
+from aiohttp import web
+from aiogram import Bot, Dispatcher, Router, F
+from aiogram.types import Message
+from aiogram.filters import Command
+import google.generativeai as genai
 
 from database import (
     get_user_balance, do_action, 
@@ -18,33 +24,22 @@ from database import (
     get_pair_xp, get_relationship_level,
     get_all_marriages, get_user_all_relations, get_db
 )
-from aiogram import Bot, Dispatcher, Router, F
-from aiogram.types import Message
-from aiogram.filters import Command
-import google.generativeai as genai
 
 logging.basicConfig(level=logging.INFO)
 
 BOT_TOKEN = "8984930047:AAFrfTQKMchyfNbhWCoO3Zbe4RYOkRSCQek"
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-OWNER_ID = 8470088909  # Твой ID (Лайт-кун)
+OWNER_ID = 8470088909  # Лайт-кун
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 router = Router()
 
-# Настраиваем старую добрую библиотеку
 genai.configure(api_key=GEMINI_API_KEY)
-
-generation_config = {
-    "temperature": 1.0,
-    "top_p": 0.95,
-    "top_k": 40,
-    "max_output_tokens": 250,
-}
+generation_config = {"temperature": 1.0, "top_p": 0.95, "top_k": 40, "max_output_tokens": 250}
 
 model = genai.GenerativeModel(
-    model_name="gemini-3.6-flash",
+    model_name="gemini-1.5-flash",  # Используем актуальную и стабильную модель
     generation_config=generation_config,
     system_instruction=(
         "Ты — бот Айрис, созданная по образу Мисы Амане из аниме 'Тетрадь Смерти'. "
@@ -55,7 +50,6 @@ model = genai.GenerativeModel(
         "и общайся максимально живо, дерзко и эмоционально."
     )
 )
-
 misa_chat = model.start_chat(history=[])
 
 # --- СЛОВАРЬ ИНТЕРАКТИВНЫХ ДЕЙСТВИЙ ---
@@ -374,7 +368,6 @@ async def handle_any_text(message: Message):
     
     text = message.text.lower().strip()
 
-    # 1. Проверка интерактивных действий
     for action_keyword, templates in ACTION_RESPONSES.items():
         if text.startswith(action_keyword):
             actor = message.from_user.first_name
@@ -392,7 +385,6 @@ async def handle_any_text(message: Message):
             await message.reply(response_text)
             return
 
-    # 2. Персональный режим для Лайт-куна
     if message.from_user.id == OWNER_ID:
         try:
             response = misa_chat.send_message(message.text)
@@ -401,7 +393,6 @@ async def handle_any_text(message: Message):
             await message.reply(f"Лайт-кун, у меня нейросеть закоротило! 😭 ({e})")
         return
 
-    # 3. Логика для групп
     if message.chat.type != "private":
         bot_user = await bot.get_me()
         is_mentioned = f"@{bot_user.username}" in message.text
@@ -419,25 +410,26 @@ async def handle_any_text(message: Message):
     else:
         await message.answer("Слышу тебя! Если нужно что-то обсудить подробно или запустить прогноз — дай знать.")
 
-# --- ВЕБ-СЕРВЕР ДЛЯ RENDER ---
+# Моментальный веб-сервер для Render
+async def handle(request):
+    return web.Response(text="Misa Amane is online and ready!")
+
 async def start_web_server():
     app = web.Application()
-    app.router.add_get("/", lambda r: web.Response(text="Misa Amane is alive!"))
+    app.router.add_get("/", handle)
     runner = web.AppRunner(app)
     await runner.setup()
     
     port = int(os.getenv("PORT", 10000))
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
-    logging.info(f"Веб-сервер успешно запущен на порту {port}")
+    print(f"Веб-сервер мгновенно занял порт {port} для Render!")
 
-# --- ГЛАВНЫЙ ЗАПУСК ---
 async def main():
     dp.include_router(router)
     await bot.delete_webhook(drop_pending_updates=True)
-    print("Бот Миса Амане запущен и готов к работе!")
     
-    # Запускаем одновременно веб-сервер для порта Render и самого бота
+    # Запускаем и веб-сервер, и поллинг бота одновременно
     await asyncio.gather(
         start_web_server(),
         dp.start_polling(bot)
