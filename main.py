@@ -1,27 +1,19 @@
 import os
-import sys
-import subprocess
-
-# Авто-установка нужных библиотек
-try:
-    import aiohttp
-    import aiogram
-except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "aiohttp", "aiogram>=3.0.0", "google-generativeai"])
-
+import threading
 import asyncio
 import random
 import logging
-from aiohttp import web
-from aiogram import Bot, Dispatcher, Router, F
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from aiogram import Bot, Dispatcher, Router
 from aiogram.types import Message
 from aiogram.filters import Command
 import google.generativeai as genai
 
+# Импортируем все функции из твоей базы данных (включая браки и отношения)
 from database import (
     get_user_balance, do_action, 
     check_married, create_marriage, divorce_user,
-    get_pair_xp, get_relationship_level,
+    get_relationship_level,
     get_all_marriages, get_user_all_relations, get_db
 )
 
@@ -39,7 +31,7 @@ genai.configure(api_key=GEMINI_API_KEY)
 generation_config = {"temperature": 1.0, "top_p": 0.95, "top_k": 40, "max_output_tokens": 250}
 
 model = genai.GenerativeModel(
-    model_name="gemini-1.5-flash",  # Используем актуальную и стабильную модель
+    model_name="gemini-1.5-flash",
     generation_config=generation_config,
     system_instruction=(
         "Ты — бот Айрис, созданная по образу Мисы Амане из аниме 'Тетрадь Смерти'. "
@@ -52,7 +44,6 @@ model = genai.GenerativeModel(
 )
 misa_chat = model.start_chat(history=[])
 
-# --- СЛОВАРЬ ИНТЕРАКТИВНЫХ ДЕЙСТВИЙ ---
 ACTION_RESPONSES = {
     "выебать": [
         "{actor} жестко выебал {target} под всеобщее ликование! 🔥",
@@ -65,7 +56,7 @@ ACTION_RESPONSES = {
         "{actor} попытался ударить {target}, но тот ловко увернулся!"
     ],
     "обнять": [
-        "{actor} крепко-крепко обнял {target}. Милота! 🥰",
+        "{actor} крепко-крепко обнял {target}. Милашка! 🥰",
         "{actor} заключил {target} в свои теплые объятия.",
         "{actor} попытался обнять {target}, но получил суровый отказ."
     ],
@@ -201,115 +192,75 @@ async def cmd_balance(message: Message):
 async def cmd_action(message: Message):
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
-        await message.answer("⚠️ Использование: /action [действие] (например, /action комплимент)", parse_mode="Markdown")
+        await message.answer("⚠️ Использование: /action [действие]", parse_mode="Markdown")
         return
-    
     action_key = args[1].lower()
     if action_key not in ACTIONS:
         await message.answer("❌ Такого действия нет в списке!")
         return
-    
     if not message.reply_to_message:
-        await message.answer("⚠️ Ответь на сообщение человека, с которым хочешь совершить действие!")
+        await message.answer("⚠️ Ответь на сообщение человека!")
         return
-        
-    user1_id = message.from_user.id
-    user2_id = message.reply_to_message.from_user.id
-    
-    act = ACTIONS[action_key]
-    success, text = do_action(user1_id, user2_id, act["xp"], act["cost"], cooldown_days=act.get("cd_days", 0))
-    
+    success, text = do_action(message.from_user.id, message.reply_to_message.from_user.id, ACTIONS[action_key]["xp"], ACTIONS[action_key]["cost"], cooldown_days=ACTIONS[action_key].get("cd_days", 0))
     if success:
-        sender_name = message.from_user.first_name
-        target_name = message.reply_to_message.from_user.first_name
-        await message.answer(f"✨ {sender_name} {act['name']} для {target_name}!\n\n{text}", parse_mode="Markdown")
+        await message.answer(f"✨ {message.from_user.first_name} {ACTIONS[action_key]['name']} для {message.reply_to_message.from_user.first_name}!\n\n{text}", parse_mode="Markdown")
     else:
         await message.answer(f"❌ {text}")
 
+# Команды браков (теперь на месте!)
 @router.message(Command("marriage", "пожениться"))
 async def cmd_marriage(message: Message):
     if not message.reply_to_message:
-        await message.answer("⚠️ Чтобы сделать предложение, ответь на сообщение любимого человека командой /marriage!")
+        await message.answer("⚠️ Ответь на сообщение любимого человека командой /marriage или /пожениться!")
         return
-        
-    user1_id = message.from_user.id
-    user2_id = message.reply_to_message.from_user.id
-    
-    success, text = create_marriage(user1_id, user2_id)
+    success, text = create_marriage(message.from_user.id, message.reply_to_message.from_user.id)
     if success:
-        sender_name = message.from_user.first_name
-        target_name = message.reply_to_message.from_user.first_name
-        await message.answer(f"🔔 Горько! 💍 {sender_name} и {target_name} теперь официально в браке!\n\n{text}", parse_mode="Markdown")
+        await message.answer(f"🔔 Горько! 💍 {message.from_user.first_name} и {message.reply_to_message.from_user.first_name} теперь официально в браке!\n\n{text}", parse_mode="Markdown")
     else:
         await message.answer(f"❌ {text}")
 
 @router.message(Command("divorce", "развод"))
 async def cmd_divorce(message: Message):
-    user_id = message.from_user.id
-    if not check_married(user_id):
+    if not check_married(message.from_user.id):
         await message.answer("Ты и так не состоишь в браке.")
         return
-    
-    divorce_user(user_id)
+    divorce_user(message.from_user.id)
     await message.answer("💔 Вы официально расторгли брак.")
 
 @router.message(Command("predict"))
 async def cmd_predict(message: Message):
-    prediction = random.choice(PREDICTIONS)
-    user_name = message.from_user.first_name
-    await message.reply(f"🔮 {user_name}, прогноз на сегодня: {prediction}")
+    await message.reply(f"🔮 {message.from_user.first_name}, прогноз на сегодня: {random.choice(PREDICTIONS)}")
 
 @router.message(Command("ban"))
 async def cmd_ban(message: Message):
-    if not await is_user_admin(message):
-        await message.reply("⛔️ Эту команду могут использовать только администраторы чата!")
+    if not await is_user_admin(message) or not message.reply_to_message:
         return
-    if not message.reply_to_message:
-        await message.reply("⚠️ Эту команду нужно использовать ответом на сообщение пользователя, которого нужно забанить!")
-        return
-    user_to_ban = message.reply_to_message.from_user
     try:
-        await message.chat.ban(user_to_ban.id)
-        await message.reply(f"🔨 Пользователь {user_to_ban.full_name} заблокирован.")
+        await message.chat.ban(message.reply_to_message.from_user.id)
+        await message.reply(f"🔨 Пользователь заблокирован.")
     except Exception as e:
-        await message.reply(f"❌ Не удалось забанить пользователя. Ошибка: {e}")
+        await message.reply(f"❌ Ошибка: {e}")
 
 @router.message(Command("mute"))
 async def cmd_mute(message: Message):
-    if not await is_user_admin(message):
-        await message.reply("⛔️ Эту команду могут использовать только администраторы чата!")
+    if not await is_user_admin(message) or not message.reply_to_message:
         return
-    if not message.reply_to_message:
-        await message.reply("⚠️ Эту команду нужно использовать ответом на сообщение пользователя!")
-        return
-    user_to_mute = message.reply_to_message.from_user
     try:
         from aiogram.types import ChatPermissions
-        permissions = ChatPermissions(can_send_messages=False)
-        await message.chat.restrict(user_to_mute.id, permissions=permissions)
-        await message.reply(f"🔇 Пользователь {user_to_mute.full_name} отправлен в мут.")
+        await message.chat.restrict(message.reply_to_message.from_user.id, permissions=ChatPermissions(can_send_messages=False))
+        await message.reply(f"🔇 Мут выдан.")
     except Exception as e:
         await message.reply(f"❌ Ошибка: {e}")
 
 @router.message(Command("unmute"))
 async def cmd_unmute(message: Message):
-    if not await is_user_admin(message):
-        await message.reply("⛔️ Эту команду могут использовать только администраторы чата!")
+    if not await is_user_admin(message) or not message.reply_to_message:
         return
-    if not message.reply_to_message:
-        await message.reply("⚠️ Ответьте на сообщение пользователя, чтобы снять мут.")
-        return
-    user_to_unmute = message.reply_to_message.from_user
     try:
         from aiogram.types import ChatPermissions
-        permissions = ChatPermissions(
-            can_send_messages=True,
-            can_send_media_messages=True,
-            can_send_other_messages=True,
-            can_add_web_page_previews=True
-        )
-        await message.chat.restrict(user_to_unmute.id, permissions=permissions)
-        await message.reply(f"🔊 С пользователя {user_to_unmute.full_name} сняты ограничения.")
+        perms = ChatPermissions(can_send_messages=True, can_send_media_messages=True, can_send_other_messages=True, can_add_web_page_previews=True)
+        await message.chat.restrict(message.reply_to_message.from_user.id, permissions=perms)
+        await message.reply(f"🔊 Мут снят.")
     except Exception as e:
         await message.reply(f"❌ Ошибка: {e}")
 
@@ -317,72 +268,37 @@ async def cmd_unmute(message: Message):
 async def text_all_marriages(message: Message):
     marriages = get_all_marriages()
     if not marriages:
-        await message.answer("💍 В этом чате пока нет ни одного официального брака. Все еще впереди!")
+        await message.answer("💍 В этом чате пока нет ни одного официального брака.")
         return
-    
     text = "💍 Браки этого чата:\n\n"
     for i, (u1, u2) in enumerate(marriages, 1):
         text += f"{i}. ID {u1} + ID {u2}\n"
-        
     await message.answer(text, parse_mode="Markdown")
-
-@router.message(lambda msg: msg.text and msg.text.lower() in ["мой брак", "моя пара"])
-async def text_my_marriage(message: Message):
-    user_id = message.from_user.id
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT user1_id, user2_id FROM marriages WHERE user1_id = ? OR user2_id = ?", (user_id, user_id))
-    row = cursor.fetchone()
-    conn.close()
-    
-    if not row:
-        await message.answer("💍 Ты пока не состоишь в официальном браке. Используй предложение через /marriage!")
-        return
-        
-    partner_id = row[1] if row[0] == user_id else row[0]
-    await message.answer(f"💍 Твоя вторая половинка: [ID {partner_id}]. Берегите друг друга!", parse_mode="Markdown")
 
 @router.message(lambda msg: msg.text and msg.text.lower() in ["отношения", "мои отношения", "мои отн"])
 async def text_my_relations(message: Message):
-    user_id = message.from_user.id
-    relations = get_user_all_relations(user_id)
-    
+    relations = get_user_all_relations(message.from_user.id)
     if not relations:
-        await message.answer("💔 У тебя пока нет активных отношений. Используй команды действий, чтобы завести симпатии!")
+        await message.answer("💔 У тебя пока нет активных отношений.")
         return
-    
     text = f"💖 Отношения {message.from_user.first_name}:\n\n"
     for u1, u2, xp in relations:
-        partner_id = u2 if user_id == u1 else u1
+        partner_id = u2 if message.from_user.id == u1 else u1
         lvl, title = get_relationship_level(xp)
         text += f"• С [ID {partner_id}]: {xp} XP | Уровень {lvl} ({title})\n"
-        
     await message.answer(text, parse_mode="Markdown")
 
 @router.message()
 async def handle_any_text(message: Message):
-    if not message.text:
+    if not message.text or message.text.startswith("/"):
         return
-    if message.text.startswith("/"):
-        return
-    
     text = message.text.lower().strip()
 
     for action_keyword, templates in ACTION_RESPONSES.items():
         if text.startswith(action_keyword):
             actor = message.from_user.first_name
-            target = "себя"
-            
-            if message.reply_to_message:
-                target = message.reply_to_message.from_user.first_name
-            else:
-                parts = message.text.split(maxsplit=1)
-                if len(parts) > 1:
-                    target = parts[1]
-
-            template = random.choice(templates)
-            response_text = template.format(actor=actor, target=target)
-            await message.reply(response_text)
+            target = message.reply_to_message.from_user.first_name if message.reply_to_message else (message.text.split(maxsplit=1)[1] if len(message.text.split(maxsplit=1)) > 1 else "себя")
+            await message.reply(random.choice(templates).format(actor=actor, target=target))
             return
 
     if message.from_user.id == OWNER_ID:
@@ -395,45 +311,37 @@ async def handle_any_text(message: Message):
 
     if message.chat.type != "private":
         bot_user = await bot.get_me()
-        is_mentioned = f"@{bot_user.username}" in message.text
-        is_reply_to_bot = message.reply_to_message and message.reply_to_message.from_user.id == bot_user.id
-        
-        if not is_mentioned and not is_reply_to_bot:
+        if f"@{bot_user.username}" not in message.text and not (message.reply_to_message and message.reply_to_message.from_user.id == bot_user.id):
             return
 
     if "привет" in text:
-        await message.answer(f"Привет, {message.from_user.first_name}! Как настроение?")
-    elif "как дела" in text or "как сам" in text:
-        await message.answer("Всё отлично, слежу за порядком в чате! Сам как?")
-    elif "что умеешь" in text or "помощь" in text:
-        await message.answer("Я могу показывать прогнозы (/predict), помогать модераторам (/ban, /mute) и выполнять действия вроде «обнять», «пнуть» или «продать на авито»!")
+        await message.answer(f"Привет, {message.from_user.first_name}!")
+    elif "как дела" in text:
+        await message.answer("Всё отлично, слежу за порядком!")
     else:
-        await message.answer("Слышу тебя! Если нужно что-то обсудить подробно или запустить прогноз — дай знать.")
+        await message.answer("Слышу тебя!")
 
-# Моментальный веб-сервер для Render
-async def handle(request):
-    return web.Response(text="Misa Amane is online and ready!")
+# Веб-сервер для Render
+class SimpleHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Misa Amane is online!")
+    def log_message(self, format, *args):
+        pass
 
-async def start_web_server():
-    app = web.Application()
-    app.router.add_get("/", handle)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    
+def run_web_server():
     port = int(os.getenv("PORT", 10000))
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
-    print(f"Веб-сервер мгновенно занял порт {port} для Render!")
-
-async def main():
-    dp.include_router(router)
-    await bot.delete_webhook(drop_pending_updates=True)
-    
-    # Запускаем и веб-сервер, и поллинг бота одновременно
-    await asyncio.gather(
-        start_web_server(),
-        dp.start_polling(bot)
-    )
+    server = HTTPServer(("0.0.0.0", port), SimpleHandler)
+    server.serve_forever()
 
 if __name__ == "__main__":
+    server_thread = threading.Thread(target=run_web_server, daemon=True)
+    server_thread.start()
+    
+    async def main():
+        dp.include_router(router)
+        await bot.delete_webhook(drop_pending_updates=True)
+        await dp.start_polling(bot)
+
     asyncio.run(main())
