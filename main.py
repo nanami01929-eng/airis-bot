@@ -4,18 +4,20 @@ import sys
 try:
     import google.generativeai
 except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "google-generativeai", "aiogram>=3.0.0"])
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "google-generativeai", "aiogram>=3.0.0", "aiohttp"])
 
 import asyncio
+import os
+import random
+import logging
+from aiohttp import web  # Сервер для Render
+
 from database import (
     get_user_balance, do_action, 
     check_married, create_marriage, divorce_user,
     get_pair_xp, get_relationship_level,
     get_all_marriages, get_user_all_relations, get_db
 )
-import os
-import random
-import logging
 from aiogram import Bot, Dispatcher, Router, F
 from aiogram.types import Message
 from aiogram.filters import Command
@@ -417,11 +419,29 @@ async def handle_any_text(message: Message):
     else:
         await message.answer("Слышу тебя! Если нужно что-то обсудить подробно или запустить прогноз — дай знать.")
 
+# --- ВЕБ-СЕРВЕР ДЛЯ RENDER ---
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get("/", lambda r: web.Response(text="Misa Amane is alive!"))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    
+    port = int(os.getenv("PORT", 10000))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    logging.info(f"Веб-сервер успешно запущен на порту {port}")
+
+# --- ГЛАВНЫЙ ЗАПУСК ---
 async def main():
     dp.include_router(router)
     await bot.delete_webhook(drop_pending_updates=True)
     print("Бот Миса Амане запущен и готов к работе!")
-    await dp.start_polling(bot)
+    
+    # Запускаем одновременно веб-сервер для порта Render и самого бота
+    await asyncio.gather(
+        start_web_server(),
+        dp.start_polling(bot)
+    )
 
 if __name__ == "__main__":
     asyncio.run(main())
